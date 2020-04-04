@@ -3,21 +3,21 @@ package main
 import (
 	"flag"
 	"fmt"
-	"gophernet/m"
+	"github.com/PaluMacil/gophernet/m"
 	"os"
+	"strings"
 )
 
 func main() {
-	flagNumInputs := flag.Int("input", 64, "input controls the number of input nodes")
-	flagNumHidden := flag.Int("hidden", 30, "output controls the number of hidden nodes")
-	flagNumOutput := flag.Int("output", 10, "output controls the number of output nodes")
-	flagNumLayers := flag.Int("layers", 3, "layers controls the total number of layers to use (3 means one hidden)")
-	flagNumEpochs := flag.Int("epochs", 6, "number of epochs")
-	flagActivator := flag.String("activator", "sigmoid", "activator is the activation function to use (default is sigmoid)")
-	flagNormalize := flag.Bool("normalize", false, "normalize controls whether each input will be normalized across the training data")
-	flagLearningRate := flag.Float64("rate", .1, "rate is the learning rate")
-	//TODO: see below
-	//targetLabels := flag.String("labels", "0,1,2,3,4,5,6,7,8,9", "labels are name to call each output")
+	trainFlags := flag.NewFlagSet("f1", flag.ContinueOnError)
+	flagNumInputs := trainFlags.Int("input", 64, "input controls the number of input nodes")
+	flagNumHidden := trainFlags.Int("hidden", 30, "output controls the number of hidden nodes")
+	flagNumOutput := trainFlags.Int("output", 10, "output controls the number of output nodes")
+	flagNumLayers := trainFlags.Int("layers", 3, "layers controls the total number of layers to use (3 means one hidden)")
+	flagNumEpochs := trainFlags.Int("epochs", 6, "number of epochs")
+	flagActivator := trainFlags.String("activator", "sigmoid", "activator is the activation function to use (default is sigmoid)")
+	flagLearningRate := trainFlags.Float64("rate", .1, "rate is the learning rate")
+	flagTargetLabels := flag.String("labels", "0,1,2,3,4,5,6,7,8,9", "labels are name to call each output")
 	flag.Parse()
 
 	if len(flag.Args()) < 2 {
@@ -29,11 +29,19 @@ func main() {
 		fmt.Println("cannot have fewer than three layers")
 		os.Exit(1)
 	}
+
 	activator, ok := m.ActivatorLookup[*flagActivator]
 	if !ok {
 		fmt.Println("invalid activator")
 		os.Exit(1)
 	}
+
+	labelSplits := strings.Split(*flagTargetLabels, " ")
+	if len(labelSplits) != *flagNumOutput {
+
+		os.Exit(1)
+	}
+
 	config := m.Config{
 		Name:         flag.Args()[1],
 		InputNum:     *flagNumInputs,
@@ -41,8 +49,8 @@ func main() {
 		OutputNum:    *flagNumOutput,
 		LayerNum:     *flagNumLayers,
 		Epochs:       *flagNumEpochs,
+		TargetLabels: labelSplits,
 		Activator:    activator,
-		Normalize:    *flagNormalize,
 		LearningRate: *flagLearningRate,
 	}
 

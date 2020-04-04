@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,8 +19,8 @@ type Config struct {
 	OutputNum    int
 	LayerNum     int
 	Epochs       int
+	TargetLabels []string
 	Activator    Activator
-	Normalize    bool
 	LearningRate float64
 }
 
@@ -170,25 +171,26 @@ func (net Network) Analyze(lines Lines) error {
 	w := csv.NewWriter(file)
 	if needsHeaders {
 		err = w.Write([]string{
-			"Name", "Inputs", "Hiddens", "Outputs", "Layers", "Epochs", "Normalize", "LR", "SecondsToTrain", "Accuracy",
+			"Name", "Inputs", "Hiddens", "Outputs", "Layers", "Epochs", "Target Labels", "LR", "End Time", "SecondsToTrain", "Accuracy",
 		})
 		if err != nil {
 			return fmt.Errorf("writing csv headers: %w", err)
 		}
 	}
-	record := make([]string, 10)
+	record := make([]string, 11)
 	record[0] = net.config.Name
 	record[1] = strconv.Itoa(net.config.InputNum)
 	record[2] = strconv.Itoa(net.config.HiddenNum)
 	record[3] = strconv.Itoa(net.config.OutputNum)
 	record[4] = strconv.Itoa(net.config.LayerNum)
 	record[5] = strconv.Itoa(net.config.Epochs)
-	record[6] = strconv.FormatBool(net.config.Normalize)
+	record[6] = strings.Join(net.config.TargetLabels, ", ")
 	record[7] = strconv.FormatFloat(net.config.LearningRate, 'E', 4, 32)
-	record[8] = strconv.Itoa(int(net.trainingEnd - net.trainingStart))
+	record[8] = strconv.Itoa(int(net.trainingEnd))
+	record[9] = strconv.Itoa(int(net.trainingEnd - net.trainingStart))
 	//TODO: see below
 	//accuracy, err := net.test()
-	//record[9] = strconv.FormatFloat(accuracy, 'E', 4, 32)
+	//record[10] = strconv.FormatFloat(accuracy, 'E', 4, 32)
 	//fmt.Printf("Accuracy %.2f%", accuracy)
 	err = w.Write(record) // calls Flush internally
 	if err := w.Error(); err != nil {

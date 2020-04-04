@@ -1,4 +1,4 @@
-module gophernet
+module github.com/PaluMacil/gophernet
 
 go 1.14
 
