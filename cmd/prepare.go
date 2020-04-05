@@ -24,7 +24,8 @@ func main() {
 
 	var newLines Lines
 	// preparation is hardcoded to look for this being either fishing or digits
-	if strings.Split(filename, ".")[0] == "digits" {
+	baseFilename := strings.Split(filename, ".")[0]
+	if baseFilename == "digits" || baseFilename == "digits-test" {
 		newLines, err = prepareDigits(file)
 		if err != nil {
 			fmt.Printf("preparing digits: %s", err)

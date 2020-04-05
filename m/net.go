@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"gonum.org/v1/gonum/mat"
 	"math"
-	"math/rand"
 	"os"
 	"path"
 	"strconv"
@@ -97,7 +96,6 @@ func (net *Network) Train(lines Lines) error {
 }
 
 func (net *Network) trainOne(inputData []float64, targetData []float64) {
-	rand.Seed(time.Now().UTC().UnixNano())
 	net.feedForward(inputData)
 	finalOutputs := net.layers[net.lastIndex()]
 
@@ -128,7 +126,7 @@ func (net *Network) feedForward(inputData []float64) {
 	// first layer
 	net.layers[0] = mat.NewDense(len(inputData), 1, inputData)
 	net.weightedSums[0] = dot(net.weights[0], net.layers[0])
-	for i, _ := range net.layers {
+	for i := range net.layers {
 		if i == 0 {
 			continue
 		}
