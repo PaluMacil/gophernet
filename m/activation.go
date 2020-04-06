@@ -1,6 +1,7 @@
 package m
 
 import (
+	"fmt"
 	"gonum.org/v1/gonum/mat"
 	"math"
 )
@@ -8,6 +9,7 @@ import (
 type Activator interface {
 	Activate(i, j int, sum float64) float64
 	Deactivate(m mat.Matrix) mat.Matrix
+	fmt.Stringer
 }
 
 var ActivatorLookup = map[string]Activator{
@@ -28,4 +30,8 @@ func (s Sigmoid) Deactivate(matrix mat.Matrix) mat.Matrix {
 	}
 	ones := mat.NewDense(rows, 1, o)
 	return multiply(matrix, subtract(ones, matrix))
+}
+
+func (s Sigmoid) String() string {
+	return "sigmoid"
 }

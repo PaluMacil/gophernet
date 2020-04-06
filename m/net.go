@@ -4,9 +4,11 @@ import (
 	"encoding/csv"
 	"fmt"
 	"gonum.org/v1/gonum/mat"
+	"io"
 	"math"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -24,7 +26,13 @@ type Config struct {
 	LearningRate float64
 }
 
-type Normalizer struct {
+func newPredictionNetwork(weights []mat.Matrix, activator Activator) Network {
+	return Network{
+		config:       Config{Activator: activator},
+		weights:      weights,
+		layers:       make([]mat.Matrix, len(weights)+1),
+		weightedSums: make([]mat.Matrix, len(weights)),
+	}
 }
 
 func NewNetwork(c Config) Network {
@@ -69,12 +77,23 @@ type Network struct {
 	layers        []mat.Matrix
 	weightedSums  []mat.Matrix
 	errors        []mat.Matrix
-	normalizers   []Normalizer
 	config        Config
 }
 
 func (net Network) lastIndex() int {
 	return len(net.layers) - 1
+}
+
+func (net Network) testFilepath() string {
+	return path.Join("data", "test", net.config.Name+".data")
+}
+
+func (net Network) testExists() bool {
+	info, err := os.Stat(net.testFilepath())
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
 }
 
 func (net *Network) Train(lines Lines) error {
@@ -111,7 +130,7 @@ func (net *Network) backpropagate(targetData []float64, finalOutputs mat.Matrix)
 			net.errors[len(net.errors)-1] = subtract(targets, finalOutputs)
 		} else {
 			// calculate hidden errors
-			net.errors[i] = dot(net.weights[1].T(), net.errors[2])
+			net.errors[i] = dot(net.weights[i].T(), net.errors[i+1])
 			//original: net.errors[i] = dot(net.weights[1].T(), net.errors[2])
 			//maybe? net.errors[i] = dot(net.weights[i-1].T(), net.errors[i])
 		}
@@ -140,11 +159,7 @@ func (net *Network) feedForward(inputData []float64) {
 
 func (net Network) Predict(inputData []float64) string {
 	// feedforward
-	net.layers[0] = mat.NewDense(len(inputData), 1, inputData)
-	net.weightedSums[0] = dot(net.weights[0], net.layers[0])
-	net.layers[1] = apply(net.config.Activator.Activate, net.weightedSums[0])
-	net.weightedSums[1] = dot(net.weights[1], net.layers[1])
-	net.layers[2] = apply(net.config.Activator.Activate, net.weightedSums[1])
+	net.feedForward(inputData)
 
 	bestOutputIndex := 0
 	highest := 0.0
@@ -159,14 +174,16 @@ func (net Network) Predict(inputData []float64) string {
 	return net.labelFor(bestOutputIndex)
 }
 
+var outPath = path.Join("data", "out")
+var analysisFilepath = path.Join(outPath, "analysis.csv")
+
 // Analyze tests the network against the test set and outputs the accuracy as well as writing to a log
 func (net Network) Analyze() error {
 	var needsHeaders bool
-	logFilename := path.Join("data", "out", "analysis.csv")
-	if _, err := os.Stat(logFilename); os.IsNotExist(err) {
+	if _, err := os.Stat(analysisFilepath); os.IsNotExist(err) {
 		needsHeaders = true
 	}
-	file, err := os.OpenFile(logFilename,
+	file, err := os.OpenFile(analysisFilepath,
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -174,30 +191,36 @@ func (net Network) Analyze() error {
 	w := csv.NewWriter(file)
 	if needsHeaders {
 		err = w.Write([]string{
-			"Name", "Inputs", "Hiddens", "Outputs", "Layers", "Epochs", "Target Labels", "LR", "End Time", "SecondsToTrain", "Accuracy",
+			"Name", "Activator", "Inputs", "Hiddens", "Outputs", "Layers", "Epochs", "Target Labels", "LR", "End Time", "SecondsToTrain", "Accuracy",
 		})
 		if err != nil {
 			return fmt.Errorf("writing csv headers: %w", err)
 		}
 		w.Flush()
 	}
-	record := make([]string, 11)
+	record := make([]string, 12)
 	record[0] = net.config.Name
-	record[1] = strconv.Itoa(net.config.InputNum)
-	record[2] = strconv.Itoa(net.config.HiddenNum)
-	record[3] = strconv.Itoa(net.config.OutputNum)
-	record[4] = strconv.Itoa(net.config.LayerNum)
-	record[5] = strconv.Itoa(net.config.Epochs)
-	record[6] = strings.Join(net.config.TargetLabels, ", ")
-	record[7] = strconv.FormatFloat(net.config.LearningRate, 'f', 4, 32)
-	record[8] = strconv.Itoa(int(net.trainingEnd))
-	record[9] = strconv.Itoa(int(net.trainingEnd - net.trainingStart))
-	accuracy, err := net.test()
-	if err != nil {
-		return fmt.Errorf("testing network: %w", err)
+	record[1] = net.config.Activator.String()
+	record[2] = strconv.Itoa(net.config.InputNum)
+	record[3] = strconv.Itoa(net.config.HiddenNum)
+	record[4] = strconv.Itoa(net.config.OutputNum)
+	record[5] = strconv.Itoa(net.config.LayerNum)
+	record[6] = strconv.Itoa(net.config.Epochs)
+	record[7] = strings.Join(net.config.TargetLabels, ", ")
+	record[8] = strconv.FormatFloat(net.config.LearningRate, 'f', 4, 32)
+	record[9] = strconv.Itoa(int(net.trainingEnd))
+	record[10] = strconv.Itoa(int(net.trainingEnd - net.trainingStart))
+	if net.testExists() {
+		accuracy, err := net.test()
+		if err != nil {
+			return fmt.Errorf("testing network: %w", err)
+		}
+		record[11] = strconv.FormatFloat(accuracy, 'f', 5, 32)
+		fmt.Printf("Accuracy %.2f%%\n", accuracy)
+	} else {
+		record[11] = "?"
+		fmt.Printf("Accuracy: (no test file at %s)", net.testFilepath())
 	}
-	record[10] = strconv.FormatFloat(accuracy, 'f', 5, 32)
-	fmt.Printf("Accuracy %.2f%%\n", accuracy)
 	err = w.Write(record)
 	if err := w.Error(); err != nil {
 		return fmt.Errorf("error writing csv: %s", err.Error())
@@ -210,8 +233,7 @@ func (net Network) Analyze() error {
 func (net Network) test() (float64, error) {
 	var correct float64
 	var total float64
-	filename := path.Join("data", "test", net.config.Name+".data")
-	file, err := os.Open(filename)
+	file, err := os.Open(net.testFilepath())
 	if err != nil {
 		return 0, fmt.Errorf("opening test file: %w", err)
 	}
@@ -248,20 +270,125 @@ func (net Network) save() error {
 	fmt.Printf("saving layer weight files for %s, run #%d\n", net.config.Name, net.trainingEnd)
 	for i := 0; i < len(net.weights); i++ {
 		filename := fmt.Sprintf("%s-%d-%d.wgt", net.config.Name, net.trainingEnd, i)
-		wf, err := os.Create(path.Join("data", "out", filename))
+		f, err := os.Create(path.Join("data", "out", filename))
 		if err != nil {
 			return err
 		}
 		d := net.weights[i].(*mat.Dense)
-		_, err = d.MarshalBinaryTo(wf)
+		_, err = d.MarshalBinaryTo(f)
 		if err != nil {
 			return fmt.Errorf("marshalling weights: %w\n", err)
 		}
-		err = wf.Close()
+		err = f.Close()
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func load(name, endingTime string, activator Activator) (Network, error) {
+	sep := string(os.PathSeparator)
+	pattern := fmt.Sprintf(".%s%s%s%s-%s-*.wgt", sep, outPath, sep, name, endingTime)
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return Network{}, fmt.Errorf("matching pattern %s: %w", pattern, err)
+	}
+	weights := make([]mat.Dense, len(matches))
+	for _, m := range matches {
+		splits := strings.Split(m, "-")
+		layerString := strings.Split(splits[2], ".")[0]
+		layerIndex, err := strconv.Atoi(layerString)
+		if err != nil {
+			return Network{}, fmt.Errorf("converting layer portion of filename to a number: %w", err)
+		}
+		f, err := os.Open(m)
+		if err != nil {
+			return Network{}, fmt.Errorf("opening file for layer %s: %w", layerString, err)
+		}
+		weights[layerIndex].Reset()
+		_, err = weights[layerIndex].UnmarshalBinaryFrom(f)
+		if err != nil {
+			return Network{}, fmt.Errorf("unmarshalling layer %s: %w", layerString, err)
+		}
+		err = f.Close()
+		if err != nil {
+			return Network{}, fmt.Errorf("closing file for layer %s: %w", layerString, err)
+		}
+	}
+	matrices := make([]mat.Matrix, len(weights))
+	for i := range weights {
+		matrices[i] = &weights[i]
+	}
+
+	return newPredictionNetwork(matrices, activator), nil
+}
+
+const csvRecords = 12
+
+// bestRun takes a dataset name and returns the best run epoch and activator
+func bestRun(name string) (string, Activator, error) {
+	file, err := os.Open(analysisFilepath)
+	if err != nil {
+		return "", nil, fmt.Errorf("opening analysis csv file: %w", err)
+	}
+	r := csv.NewReader(file)
+	// set to negative because if all accuracies for this data set were not measured, they failed parse of accuracy will
+	// parse as the zero value of a float (0), which allows us to use the untested run until we get test data
+	highestAccuracy := -1.
+	var bestEndingTime string
+	var activator Activator
+	i := 0
+	// Iterate through the records
+	for {
+		// Read each record from csv
+		record, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", nil, fmt.Errorf("reading record: %w", err)
+		}
+		if len(record) != csvRecords {
+			if i == 0 {
+				return "", nil, fmt.Errorf("there are %d analysis csv headers, expected %d", len(record), csvRecords)
+			} else {
+				return "", nil, fmt.Errorf("there are %d analysis csv values in record %d, expected %d", len(record), i, csvRecords)
+			}
+		}
+		// record[0] is name
+		// record[1] is activator
+		// record[9] is time ending (epoch time)
+		// record[11] is Accuracy
+		if record[0] != name {
+			continue
+		}
+		accuracy, _ := strconv.ParseFloat(record[11], 64)
+		if accuracy > highestAccuracy {
+			highestAccuracy = accuracy
+			bestEndingTime = record[9]
+			var ok bool
+			activator, ok = ActivatorLookup[record[1]]
+			if !ok {
+				return "", nil, fmt.Errorf("invalid activator: %s", record[1])
+			}
+		}
+		i++
+	}
+
+	return bestEndingTime, activator, nil
+}
+
+func BestNetworkFor(name string) (Network, error) {
+	epoch, activator, err := bestRun(name)
+	if err != nil {
+		return Network{}, fmt.Errorf("getting best epoch for %s: %w", name, err)
+	}
+	net, err := load(name, epoch, activator)
+	if err != nil {
+		return Network{}, fmt.Errorf("loading network")
+	}
+
+	return net, nil
 }

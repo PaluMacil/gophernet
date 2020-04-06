@@ -6,6 +6,7 @@ import (
 	"github.com/PaluMacil/gophernet/m"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -34,7 +35,7 @@ func main() {
 		flagTargetLabels := trainFlags.String("labels", "0,1,2,3,4,5,6,7,8,9", "labels are name to call each output")
 		err := trainFlags.Parse(os.Args[3:])
 		if err != nil {
-			fmt.Printf("parsing train flags: %s", err.Error())
+			fmt.Printf("parsing train flags: %s\n", err.Error())
 			os.Exit(1)
 		}
 
@@ -51,7 +52,7 @@ func main() {
 
 		labelSplits := strings.Split(*flagTargetLabels, ",")
 		if len(labelSplits) != *flagNumOutput {
-			fmt.Printf("expected %d target labels, got %d", *flagNumOutput, len(labelSplits))
+			fmt.Printf("expected %d target labels, got %d\n", *flagNumOutput, len(labelSplits))
 			os.Exit(1)
 		}
 
@@ -69,7 +70,31 @@ func main() {
 
 		train(config)
 	case "predict":
+		predictFlags := flag.NewFlagSet("predict", flag.ContinueOnError)
+		flagQuery := predictFlags.String("query", "0,1,0,0", "labels are name to call each output")
+		err := predictFlags.Parse(os.Args[3:])
+		if err != nil {
+			fmt.Printf("parsing train flags: %s\n", err.Error())
+			os.Exit(1)
+		}
+		queryStrings := strings.Split(*flagQuery, ",")
+		query := make([]float64, len(queryStrings))
+		for i, s := range queryStrings {
+			num, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				fmt.Printf("parsing input: %s\n", err.Error())
+			}
+			query[i] = num
+		}
 
+		network, err := m.BestNetworkFor(networkName)
+		if err != nil {
+			fmt.Printf("predicting %s: %s\n", queryStrings, err.Error())
+			os.Exit(1)
+		}
+
+		prediction := network.Predict(query)
+		fmt.Println("Prediction:", prediction)
 	}
 }
 
