@@ -26,9 +26,12 @@ type Config struct {
 	LearningRate float64
 }
 
-func newPredictionNetwork(weights []mat.Matrix, activator Activator) Network {
+func newPredictionNetwork(weights []mat.Matrix, run runInfo) Network {
 	return Network{
-		config:       Config{Activator: activator},
+		config: Config{
+			Activator:    run.activator,
+			TargetLabels: run.targetLabels,
+		},
 		weights:      weights,
 		layers:       make([]mat.Matrix, len(weights)+1),
 		weightedSums: make([]mat.Matrix, len(weights)),
@@ -129,10 +132,7 @@ func (net *Network) backpropagate(targetData []float64, finalOutputs mat.Matrix)
 			targets := mat.NewDense(len(targetData), 1, targetData)
 			net.errors[len(net.errors)-1] = subtract(targets, finalOutputs)
 		} else {
-			// calculate hidden errors
 			net.errors[i] = dot(net.weights[i].T(), net.errors[i+1])
-			//original: net.errors[i] = dot(net.weights[1].T(), net.errors[2])
-			//maybe? net.errors[i] = dot(net.weights[i-1].T(), net.errors[i])
 		}
 		net.weights[i-1] = add(net.weights[i-1],
 			scale(net.config.LearningRate,
@@ -288,9 +288,9 @@ func (net Network) save() error {
 	return nil
 }
 
-func load(name, endingTime string, activator Activator) (Network, error) {
+func load(run runInfo) (Network, error) {
 	sep := string(os.PathSeparator)
-	pattern := fmt.Sprintf(".%s%s%s%s-%s-*.wgt", sep, outPath, sep, name, endingTime)
+	pattern := fmt.Sprintf(".%s%s%s%s-%s-*.wgt", sep, outPath, sep, run.name, run.bestEndingTime)
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return Network{}, fmt.Errorf("matching pattern %s: %w", pattern, err)
@@ -322,23 +322,29 @@ func load(name, endingTime string, activator Activator) (Network, error) {
 		matrices[i] = &weights[i]
 	}
 
-	return newPredictionNetwork(matrices, activator), nil
+	return newPredictionNetwork(matrices, run), nil
+}
+
+type runInfo struct {
+	name           string
+	bestEndingTime string
+	targetLabels   []string
+	activator      Activator
 }
 
 const csvRecords = 12
 
 // bestRun takes a dataset name and returns the best run epoch and activator
-func bestRun(name string) (string, Activator, error) {
+func bestRun(name string) (runInfo, error) {
 	file, err := os.Open(analysisFilepath)
 	if err != nil {
-		return "", nil, fmt.Errorf("opening analysis csv file: %w", err)
+		return runInfo{}, fmt.Errorf("opening analysis csv file: %w", err)
 	}
 	r := csv.NewReader(file)
 	// set to negative because if all accuracies for this data set were not measured, they failed parse of accuracy will
 	// parse as the zero value of a float (0), which allows us to use the untested run until we get test data
 	highestAccuracy := -1.
-	var bestEndingTime string
-	var activator Activator
+	var run runInfo
 	i := 0
 	// Iterate through the records
 	for {
@@ -348,17 +354,18 @@ func bestRun(name string) (string, Activator, error) {
 			break
 		}
 		if err != nil {
-			return "", nil, fmt.Errorf("reading record: %w", err)
+			return runInfo{}, fmt.Errorf("reading record: %w", err)
 		}
 		if len(record) != csvRecords {
 			if i == 0 {
-				return "", nil, fmt.Errorf("there are %d analysis csv headers, expected %d", len(record), csvRecords)
+				return runInfo{}, fmt.Errorf("there are %d analysis csv headers, expected %d", len(record), csvRecords)
 			} else {
-				return "", nil, fmt.Errorf("there are %d analysis csv values in record %d, expected %d", len(record), i, csvRecords)
+				return runInfo{}, fmt.Errorf("there are %d analysis csv values in record %d, expected %d", len(record), i, csvRecords)
 			}
 		}
 		// record[0] is name
 		// record[1] is activator
+		// record[7] is the comma separated list of target labels
 		// record[9] is time ending (epoch time)
 		// record[11] is Accuracy
 		if record[0] != name {
@@ -366,26 +373,28 @@ func bestRun(name string) (string, Activator, error) {
 		}
 		accuracy, _ := strconv.ParseFloat(record[11], 64)
 		if accuracy > highestAccuracy {
+			run.name = name
 			highestAccuracy = accuracy
-			bestEndingTime = record[9]
+			run.bestEndingTime = record[9]
 			var ok bool
-			activator, ok = ActivatorLookup[record[1]]
+			run.activator, ok = ActivatorLookup[record[1]]
 			if !ok {
-				return "", nil, fmt.Errorf("invalid activator: %s", record[1])
+				return runInfo{}, fmt.Errorf("invalid activator: %s", record[1])
 			}
+			run.targetLabels = strings.Split(record[7], ",")
 		}
 		i++
 	}
 
-	return bestEndingTime, activator, nil
+	return run, nil
 }
 
 func BestNetworkFor(name string) (Network, error) {
-	epoch, activator, err := bestRun(name)
+	run, err := bestRun(name)
 	if err != nil {
 		return Network{}, fmt.Errorf("getting best epoch for %s: %w", name, err)
 	}
-	net, err := load(name, epoch, activator)
+	net, err := load(run)
 	if err != nil {
 		return Network{}, fmt.Errorf("loading network")
 	}
