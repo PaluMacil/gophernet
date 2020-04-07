@@ -14,6 +14,7 @@ type Activator interface {
 
 var ActivatorLookup = map[string]Activator{
 	"sigmoid": Sigmoid{},
+	"tanh":    Tanh{},
 }
 
 type Sigmoid struct{}
@@ -34,4 +35,22 @@ func (s Sigmoid) Deactivate(matrix mat.Matrix) mat.Matrix {
 
 func (s Sigmoid) String() string {
 	return "sigmoid"
+}
+
+type Tanh struct{}
+
+func (t Tanh) Activate(i, j int, sum float64) float64 {
+	return math.Tanh(sum)
+}
+
+func (t Tanh) Deactivate(matrix mat.Matrix) mat.Matrix {
+	tanhPrime := func(i, j int, v float64) float64 {
+		return 1.0 - (math.Tanh(v) * math.Tanh(v))
+	}
+
+	return apply(tanhPrime, matrix)
+}
+
+func (t Tanh) String() string {
+	return "tanh"
 }

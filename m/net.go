@@ -219,7 +219,7 @@ func (net Network) Analyze() error {
 		fmt.Printf("Accuracy %.2f%%\n", accuracy)
 	} else {
 		record[11] = "?"
-		fmt.Printf("Accuracy: (no test file at %s)", net.testFilepath())
+		fmt.Printf("Accuracy: (no test file at %s)\n", net.testFilepath())
 	}
 	err = w.Write(record)
 	if err := w.Error(); err != nil {
