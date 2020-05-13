@@ -5,16 +5,6 @@ configurable network parameters. There are two datasets used here. One is handwr
 represented as 64 values representing an 8x8 bitmap of a character. Each value ranges from 0..16 and represents an 
 intensity. A second detaset, fishing, gives information about whether it is a good day to fish.
 
-## Author Details
-
-Daniel Wolf
-
-## Project and Course Name
-
-Project 1: Exploratory Data Analysis
-
-CIS 678, Winter 2020
-
 ## Implementation
 
 ### Preparation
